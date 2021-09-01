@@ -6,7 +6,7 @@
 2. 创建完成后,待EC2 启动完成,拷贝需要的生成消息的CSV文件到 EC2的/shared/greengrass/buffer/ 目录下即可
 3. 将Greengrass Lambda 挂载本地资源,选择LocalVolumeResourceData资源,选择只读访问权限.
    ![图 1](res/1630503862589.png)  
-
+4. 在AWS IoT Core 测试界面找到测试,订阅 "sensor/out" 即可,这个topic可以做相应修改.
 
 ## 使用限制
 1. 目前可以在以下区域使用,us-east-1,us-west-2,eu-west-1,eu-central-1,ap-northeast-1,ap-southeast-1,ap-southeast-2,其他区域自行复制AMI 解决
@@ -23,4 +23,6 @@ sudo wget -cO - https://Someurl//iotdata.csv >/shared/greengrass/buffer/iotdata.
 ```
 ## 代码说明
 代码自动完成以下工作
-1. 创建VPC资源
+1. 创建VPC资源,包括子网,安全组
+2. 创建虚拟机并安装Greengrass软件,启用服务
+3. 创建Lambda及相应组件,包括资源组,证书策略等
