@@ -1,94 +1,170 @@
-AWSTemplateFormatVersion: "2010-09-09"
-
-Description: Create Greengrass resources and group, with supporting AWS services
-
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'Create E2E Workshop Relate resources, with supporting AWS services'
 Parameters:
   CoreName:
-    Description: Green Core name to be created. A "Thing" with be created with _Core appended to the name
+    Description: >-
+      All resources Will be create. A "Thing" with be created with _Core
+      appended to the name
     Type: String
-    Default: GG_gen
+    Default: e2e_gg
   SecurityAccessCIDR:
     Description: CIDR block to limit inbound access for only SSH
     Type: String
-    Default: '0.0.0.0/0'
+    Default: 0.0.0.0/0
   myKeyPair:
     Description: Amazon EC2 Key Pair for accessing Greengrass Core instance
-    Type: "AWS::EC2::KeyPair::KeyName"
-
+    Type: 'AWS::EC2::KeyPair::KeyName'
 Mappings:
-  # If Greengrass becomes available in other regions, add the x86 AMI Id for the
-  # image description:  "Ubuntu Server 16.04 LTS (HVM), SSD Volume Type"
-  RegionMap: 
-    us-east-1: 
-      "HVM": "ami-0565af6e282977273"
-    us-west-2: 
-      "HVM": "ami-08692d171e3cf02d6"
-    eu-west-1: 
-      "HVM": "ami-08660f1c6fb6b01e7"
-    eu-central-1: 
-      "HVM": "ami-05af84768964d3dc0"
-    ap-northeast-1: 
-      "HVM": "ami-06c43a7df16e8213c"
-    ap-southeast-1: 
-      "HVM": "ami-067c604f60d058075"
-    ap-southeast-2: 
-      "HVM": "ami-0789a5fb42dcccc10"
+  RegionMap:
+    us-east-1:
+      HVM: ami-0565af6e282977273
+    us-west-2:
+      HVM: ami-08692d171e3cf02d6
+    eu-west-1:
+      HVM: ami-08660f1c6fb6b01e7
+    eu-central-1:
+      HVM: ami-05af84768964d3dc0
+    ap-northeast-1:
+      HVM: ami-06c43a7df16e8213c
+    ap-southeast-1:
+      HVM: ami-067c604f60d058075
+    ap-southeast-2:
+      HVM: ami-0789a5fb42dcccc10
 Resources:
-  #############################################################################
-  # GREENGRASS RESOURCES SECTION
-  # This section contains all the Greengrass related resources
-  #############################################################################
+  E2EDataS3Bucket:
+    Type: 'AWS::S3::Bucket'
+  S3Copy:
+    Type: 'Custom::CopyToS3'
+    Properties:
+      ServiceToken: !GetAtt 
+        - CopyFilesToS3
+        - Arn
+      S3BucketName: !Ref E2EDataS3Bucket
+      Urls:
+        - >-
+          https://pdm-workshop-ue1.s3.amazonaws.com/rawdata/e2e-sample-data-lab2.csv
+  CopyFilesToS3:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Handler: index.lambda_handler
+      Role: !GetAtt 
+        - LambdaExecutionRole
+        - Arn
+      Code:
+        ZipFile: !Join 
+          - |+
+
+          - - ''
+            - import os
+            - import urllib.request
+            - from urllib.parse import urlparse
+            - import json
+            - import boto3
+            - import cfnresponse
+            - ''
+            - print('Loading function')
+            - ''
+            - s3 = boto3.resource('s3')
+            - ''
+            - ''
+            - 'def save_to_local(url):'
+            - '    urlPath = urlparse(url).path'
+            - '    fileName = os.path.basename(urlPath)'
+            - '    filePath = ''/tmp/'' + fileName'
+            - '    urllib.request.urlretrieve(url, filePath)'
+            - '    return filePath'
+            - ''
+            - ''
+            - 'def upload_to_s3(filePath, bucket):'
+            - '    fileName = os.path.basename(filePath)'
+            - '    s3.Object(bucket, ''labdata/''+fileName).put(Body=open(filePath, ''rb''))'
+            - ''
+            - ''
+            - 'def copy_to_s3(url, bucket):'
+            - '    filePath = save_to_local(url)'
+            - '    upload_to_s3(filePath, bucket)'
+            - ''
+            - ''
+            - 'def lambda_handler(event, context):'
+            - '    print(''Received event: '' + json.dumps(event, indent=2))'
+            - ''
+            - '    if event[''RequestType''] == ''Create'':'
+            - '        # get the properties set in the CloudFormation resource'
+            - '        properties = event[''ResourceProperties'']'
+            - '        urls = properties[''Urls'']'
+            - '        bucket = properties[''S3BucketName'']'
+            - ''
+            - '        try:'
+            - '            for url in urls:'
+            - '                copy_to_s3(url, bucket)'
+            - ''
+            - '        except Exception as e:'
+            - '            print(e)'
+            - '            cfnresponse.send(event, context, cfnresponse.FAILED, {'
+            - '                             ''Response'': ''Failure''})'
+            - '            return'
+            - ''
+            - '    cfnresponse.send(event, context, cfnresponse.SUCCESS,'
+            - '                     {''Response'': ''Success''})'
+      Runtime: python3.7
+      Timeout: 300
   GreengrassGroup:
-    Type: AWS::Greengrass::Group
+    Type: 'AWS::Greengrass::Group'
     Properties:
       Name: !Ref CoreName
-      RoleArn: !GetAtt GreengrassResourceRole.Arn
+      RoleArn: !GetAtt 
+        - GreengrassResourceRole
+        - Arn
       InitialVersion:
         CoreDefinitionVersionArn: !Ref GreengrassCoreDefinitionVersion
-        FunctionDefinitionVersionArn: !GetAtt FunctionDefinition.LatestVersionArn
-        SubscriptionDefinitionVersionArn: !GetAtt SubscriptionDefinition.LatestVersionArn
-        # Other Greengrass resources that can be included in a group
-        # not used in this example
-        #
-        # DeviceDefinitionVersionArn: !Ref ExampleDeviceDefinitionVersion
-        # LoggerDefinitionVersionArn: !Ref ExampleLoggerDefinitionVersion
+        FunctionDefinitionVersionArn: !GetAtt 
+          - FunctionDefinition
+          - LatestVersionArn
+        SubscriptionDefinitionVersionArn: !GetAtt 
+          - SubscriptionDefinition
+          - LatestVersionArn
         ResourceDefinitionVersionArn: !Ref TestResourceDefinitionVersion
-        # ConnectorDefinitionVersionArn: !Ref ExampleConnectorDefinitionVersion
   GreengrassCoreDefinition:
-    Type: AWS::Greengrass::CoreDefinition
+    Type: 'AWS::Greengrass::CoreDefinition'
     Properties:
-      # use CoreName + "_Core" as "thingName"
-      Name: !Join ["_", [!Ref CoreName, "Core"] ]
+      Name: !Join 
+        - _
+        - - !Ref CoreName
+          - Core
   GreengrassCoreDefinitionVersion:
-    # Example of using GreengrassCoreDefinition referring to this
-    # "Version" resource
-    Type: AWS::Greengrass::CoreDefinitionVersion
+    Type: 'AWS::Greengrass::CoreDefinitionVersion'
     Properties:
       CoreDefinitionId: !Ref GreengrassCoreDefinition
       Cores:
-        - Id: !Join ["_", [!Ref CoreName, "Core"] ]
-          ThingArn: !Join
-                      - ":"
-                      - - "arn:aws:iot"
-                        - !Ref AWS::Region
-                        - !Ref AWS::AccountId
-                        - !Join
-                          - "/"
-                          - - "thing"
-                            - !Join ["_", [!Ref CoreName, "Core"] ]
-          CertificateArn: !Join
-                            - ":"
-                            - - "arn:aws:iot"
-                              - !Ref AWS::Region
-                              - !Ref AWS::AccountId
-                              - !Join
-                                - "/"
-                                - - "cert"
-                                  - !GetAtt IoTThing.certificateId
-          SyncShadow: "false"
+        - Id: !Join 
+            - _
+            - - !Ref CoreName
+              - Core
+          ThingArn: !Join 
+            - ':'
+            - - 'arn:aws:iot'
+              - !Ref 'AWS::Region'
+              - !Ref 'AWS::AccountId'
+              - !Join 
+                - /
+                - - thing
+                  - !Join 
+                    - _
+                    - - !Ref CoreName
+                      - Core
+          CertificateArn: !Join 
+            - ':'
+            - - 'arn:aws:iot'
+              - !Ref 'AWS::Region'
+              - !Ref 'AWS::AccountId'
+              - !Join 
+                - /
+                - - cert
+                  - !GetAtt 
+                    - IoTThing
+                    - certificateId
+          SyncShadow: 'false'
   FunctionDefinition:
-    # Example of using "InitialVersion" to not have to reference a separate
-    # "Version" resource
     Type: 'AWS::Greengrass::FunctionDefinition'
     Properties:
       Name: FunctionDefinition
@@ -97,7 +173,10 @@ Resources:
           Execution:
             IsolationMode: GreengrassContainer
         Functions:
-          - Id: !Join ["_", [!Ref CoreName, "lambda"] ]
+          - Id: !Join 
+              - _
+              - - !Ref CoreName
+                - lambda
             FunctionArn: !Ref GGSampleFunctionVersion
             FunctionConfiguration:
               Pinned: 'true'
@@ -111,29 +190,42 @@ Resources:
                 AccessSysfs: 'false'
                 Execution:
                   IsolationMode: GreengrassContainer
-                  # RunAs:
-                  #   Uid: '1'
-                  #   Gid: '10'
   SubscriptionDefinition:
     Type: 'AWS::Greengrass::SubscriptionDefinition'
     Properties:
       Name: SubscriptionDefinition
       InitialVersion:
-        # Example of one-to-many subscriptions in single definition version
         Subscriptions:
           - Id: Subscription1
             Source: !Ref GGSampleFunctionVersion
-            Subject: !Join
-                        - "/"
-                        - - "sensor"
-                          - "out"
-            Target: 'cloud'
-  # Functions need to be versioned for use in a Group config
-  GGSampleFunctionVersion:
-    # Example of using FunctionVersion
-    Type: AWS::Lambda::Version
+            Subject: !Join 
+              - /
+              - - sensor
+                - out
+            Target: cloud
+  GGSampleFunction:
+    Type: 'AWS::Lambda::Function'
     Properties:
-      FunctionName : !GetAtt GGSampleFunction.Arn
+      FunctionName: !Join 
+        - _
+        - - !Ref CoreName
+          - data_gen
+      Description: Long running lambda that provides telemetry and pub/sub echo
+      Handler: greengrassFileIngestion.function_handler
+      Runtime: python3.8
+      Role: !GetAtt 
+        - LambdaExecutionRole
+        - Arn
+      Timeout: 60
+      Code:
+        S3Bucket: pdm-workshop-ue1
+        S3Key: Lambda/lam.zip
+  GGSampleFunctionVersion:
+    Type: 'AWS::Lambda::Version'
+    Properties:
+      FunctionName: !GetAtt 
+        - GGSampleFunction
+        - Arn
   TestResourceDefinition:
     Type: 'AWS::Greengrass::ResourceDefinition'
     Properties:
@@ -150,17 +242,137 @@ Resources:
               SourcePath: /shared/greengrass/buffer
               DestinationPath: /shared
               GroupOwnerSetting:
-                AutoAddGroupOwner: 'True'                                
-  #############################################################################
-  # SUPPORTING RESOURCES SECTION
-  # This section contains all the resources that support the Greengrass
-  # section above. The VPC and EC2 instance to run Greengrass core software, the
-  # AWS IoT Thing, Certificate, and IoT Policy required for the Greengrass
-  # Core definition, and finally custom resources to assist with CloudFormation
-  # stack setup and teardown.
-  #############################################################################
+                AutoAddGroupOwner: 'True'
+  IoT2S3Lambda:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Runtime: nodejs12.x
+      Timeout: 300
+      Handler: index.handler
+      Role: !GetAtt 
+        - LambdaExecutionRole
+        - Arn
+      Code:
+        ZipFile: |
+          'use strict';
+          console.log('Loading function');
+          exports.handler = (event, context, callback) => {
+              let success = 0; // Number of valid entries found
+              let failure = 0; // Number of invalid entries found
 
-  # Supporting resources from VPC, EC2 Instance, AWS IoT Core
+              /* Process the list of records and transform them */
+              const output = event.records.map((record) => {
+                  // Kinesis data is base64 encoded so decode here
+                  console.log(record.recordId);
+                  const payload = (Buffer.from(record.data, 'base64')).toString('utf8');
+                  console.log('Decoded payload:', payload);
+
+                  // Split the data into it's fields so we can refer to them by index
+                  const match = JSON.parse(payload);
+                  console.log('match payload:', match);
+                  if (match) {
+                      /* Prepare JSON version from Syslog log data */
+                      const result1 = `${match["sensor_1_AUXILIQUIDOPENING"]},${match["sensor_1_COMPCURRENT"]},${match["sensor_1_COMPEXHAUSTTEMP"]},${match["sensor_1_COMPLOAD"]},${match["sensor_1_COMPPOWER"]},${match["sensor_1_COMPRUNTIME"]},${match["sensor_1_COMPSPEED"]},${match["sensor_1_COMPSUCTIONTEMP"]},${match["sensor_1_COMPVOLTAGE"]},${match["sensor_1_CONDSIDEEXHAUSTPRESS"]},${match["sensor_1_DISCHARGESUPERHEAT"]},${match["sensor_1_ECONPRESS"]},${match["sensor_1_ECONREFRTEMP"]},${match["sensor_1_EVAPSIDESUCTIONPRESS"]},${match["sensor_1_INVERTERTEMP"]},${match["sensor_1_MAINFLOWVALVEOPENING"]},${match["sensor_1_MAINLOOPLEVEL"]},${match["sensor_2_AUXILIQUIDOPENING"]},${match["sensor_2_COMPCURRENT"]},${match["sensor_2_COMPEXHAUSTTEMP"]},${match["sensor_2_COMPLOAD"]},${match["sensor_2_COMPPOWER"]},${match["sensor_2_COMPRUNTIME"]},${match["sensor_2_COMPSPEED"]},${match["sensor_2_COMPSUCTIONTEMP"]},${match["sensor_2_COMPVOLTAGE"]},${match["sensor_2_CONDSIDEEXHAUSTPRESS"]},${match["sensor_2_DISCHARGESUPERHEAT"]},${match["sensor_2_ECONPRESS"]},${match["sensor_2_ECONREFRTEMP"]},${match["sensor_2_EVAPSIDESUCTIONPRESS"]},${match["sensor_2_INVERTERTEMP"]},${match["sensor_2_MAINFLOWVALVEOPENING"]},${match["sensor_2_MAINLOOPLEVEL"]},${match["sensor_3_AUXILIQUIDOPENING"]},${match["sensor_3_COMPCURRENT"]},${match["sensor_3_COMPEXHAUSTTEMP"]},${match["sensor_3_COMPLOAD"]},${match["sensor_3_COMPPOWER"]},${match["sensor_3_COMPRUNTIME"]},${match["sensor_3_COMPSPEED"]},${match["sensor_3_COMPSUCTIONTEMP"]},${match["sensor_3_COMPVOLTAGE"]},${match["sensor_3_CONDSIDEEXHAUSTPRESS"]},${match["sensor_3_DISCHARGESUPERHEAT"]},${match["sensor_3_ECONPRESS"]},${match["sensor_3_ECONREFRTEMP"]},${match["sensor_3_EVAPSIDESUCTIONPRESS"]},${match["sensor_3_INVERTERTEMP"]},${match["sensor_3_MAINFLOWVALVEOPENING"]},${match["sensor_3_MAINLOOPLEVEL"]},${match["SYSTEM_CONDCAPACITY"]},${match["SYSTEM_CONDSIDETEMPIN"]},${match["SYSTEM_CONDSIDETEMPOUT"]},${match["SYSTEM_EVAPCAPACITY"]},${match["SYSTEM_EVAPSIDETEMPOUT"]},${match["SYSTEM_UNITPOWER"]},${match["code"]},${match["time"]}` + "\n";
+                      console.log('result is :',result1);
+                      success++;
+                      return {
+                          recordId: record.recordId,
+                          result: 'Ok',
+                          data: (Buffer.from(result1, 'utf8')).toString('base64'),
+                      };
+                  } else {
+                      /* Failed event, notify the error and leave the record intact */
+                      failure++;
+                      return {
+                          recordId: record.recordId,
+                          result: 'ProcessingFailed',
+                          data: record.data,
+                      };
+                  }
+              });
+              console.log(`Processing completed.  Successful records ${success}, Failed records ${failure}.`);
+              callback(null, { records: output });
+          };   
+  LambdaFunctionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: LambdaFunctionPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                  - 'cloudwatch:*'
+                Resource: '*'
+  iotanalytics2LambdaPermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !GetAtt 
+        - IoT2CWLambda
+        - Arn
+      Principal: iotanalytics.amazonaws.com
+  IoT2CWLambda:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Runtime: python3.7
+      Timeout: 5
+      Handler: index.lambda_handler
+      Role: !GetAtt 
+        - LambdaFunctionRole
+        - Arn
+      Environment:
+        Variables:
+          devicename: Sensor
+          env1: sensor_1_CONDSIDEEXHAUSTPRESS
+          env2: sensor_2_CONDSIDEEXHAUSTPRESS
+          env3: sensor_1_EVAPSIDESUCTIONPRESS
+          env4: sensor_2_EVAPSIDESUCTIONPRESS
+          env5: sensor_3_EVAPSIDESUCTIONPRESS
+      Code:
+        ZipFile: >
+          import json
+
+          import boto3
+
+          import os
+
+          ATTRIBUTES = [os.environ['env1'], os.environ['env2'],
+          os.environ['env3'], os.environ['env4'],os.environ['env5']]
+
+          DEVICE_ID = os.environ['devicename']
+
+          def cw(DeviceName,value,name):
+              cloudwatch = boto3.client('cloudwatch')
+              cloudwatch.put_metric_data(MetricData=[ 
+                  {
+                  'MetricName': name,
+                  'Dimensions': [{'Name': 'E2EIoT','Value': DeviceName}],
+                  'Unit': 'None', 
+                  'Value': value
+                  }],Namespace='E2EIoT/Monitor')
+              return
+          def lambda_handler(event, context):
+              for e in event:
+                  print("Received a message: {}".format(str(e)))
+                  for attribute in ATTRIBUTES:
+                      if attribute in e:
+                          cw(DEVICE_ID,float(e[attribute]), attribute)
+              return event                   
   VPC:
     Type: 'AWS::EC2::VPC'
     Properties:
@@ -178,8 +390,9 @@ Resources:
   SubnetAPublic:
     Type: 'AWS::EC2::Subnet'
     Properties:
-      # Use returned AZ to ensure instance type available
-      AvailabilityZone: !GetAtt InstanceAZ.AvailabilityZone
+      AvailabilityZone: !GetAtt 
+        - InstanceAZ
+        - AvailabilityZone
       CidrBlock: 172.31.0.0/24
       MapPublicIpOnLaunch: true
       VpcId: !Ref VPC
@@ -197,57 +410,104 @@ Resources:
     DependsOn: VPCGatewayAttachment
     Properties:
       RouteTableId: !Ref RouteTablePublic
-      DestinationCidrBlock: '0.0.0.0/0'
+      DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway
   InstanceSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
+    Type: 'AWS::EC2::SecurityGroup'
     Properties:
       GroupDescription: Allow inbound SSH access
-      VpcId:
-        Ref: VPC
+      VpcId: !Ref VPC
       SecurityGroupIngress:
-      - IpProtocol: tcp
-        FromPort: 22
-        ToPort: 22
-        CidrIp: !Ref SecurityAccessCIDR
-
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SecurityAccessCIDR
   GreengrassInstance:
-    Type: "AWS::EC2::Instance"
+    Type: 'AWS::EC2::Instance'
     DependsOn: GreengrassGroup
     Properties:
-      ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", HVM]
+      ImageId: !FindInMap 
+        - RegionMap
+        - !Ref 'AWS::Region'
+        - HVM
       InstanceType: t3.micro
       KeyName: !Ref myKeyPair
-      SecurityGroupIds: !Split [",", !GetAtt InstanceSecurityGroup.GroupId]
+      SecurityGroupIds: !Split 
+        - ','
+        - !GetAtt 
+          - InstanceSecurityGroup
+          - GroupId
       Tags:
-       - Key: Name
-         Value: !Join ["-", [ "GGSim ", !Ref CoreName] ]
+        - Key: Name
+          Value: !Join 
+            - '-'
+            - - 'GGSim '
+              - !Ref CoreName
       SubnetId: !Ref SubnetAPublic
-      UserData:
-        # All the steps to install dependencies and create the specific
-        # Greengrass core config and certificate/private key files.
-        Fn::Base64: !Sub |
+      UserData: !Base64 
+        'Fn::Sub': >
           #!/bin/bash
+
           export DEBIAN_FRONTEND=noninteractive
+
           apt update -y
+
           apt upgrade -y
-          apt install python-minimal python-pip -y
-          pip install greengrasssdk
+          
+          apt install software-properties-common -y
+          
+          add-apt-repository ppa:deadsnakes/ppa -y
+          
+          apt update -y
+          
+          apt install python3.8 python3.8-gdbm python3.8-distutils -y
+          
+          update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.5 1
+          
+          update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.8 2
+          
+          update-alternatives --set python3 /usr/bin/python3.8
+          
+          wget https://bootstrap.pypa.io/get-pip.py
+          
+          python3 get-pip.py 
+
+          python3 -m pip install greengrasssdk
+
           adduser --system ggc_user
+
           groupadd --system ggc_group
 
+
           # Install Greengrass via APT repository (suitable for testing)
-          wget -O aws-iot-greengrass-keyring.deb https://d1onfpft10uf5o.cloudfront.net/greengrass-apt/downloads/aws-iot-greengrass-keyring.deb
+
+          wget -O aws-iot-greengrass-keyring.deb
+          https://d1onfpft10uf5o.cloudfront.net/greengrass-apt/downloads/aws-iot-greengrass-keyring.deb
+
           dpkg -i aws-iot-greengrass-keyring.deb
-          echo "deb https://dnw9lb6lzp2d8.cloudfront.net stable main" | sudo tee /etc/apt/sources.list.d/greengrass.list
+
+          echo "deb https://dnw9lb6lzp2d8.cloudfront.net stable main" | sudo tee
+          /etc/apt/sources.list.d/greengrass.list
+
           apt update -y
+
           apt install aws-iot-greengrass-core -y
-          echo -n "${IoTThing.certificatePem}" > /greengrass/certs/${IoTThing.certificateId}.pem
-          echo -n "${IoTThing.privateKey}" > /greengrass/certs/${IoTThing.certificateId}.key
+
+          echo -n "${IoTThing.certificatePem}" >
+          /greengrass/certs/${IoTThing.certificateId}.pem
+
+          echo -n "${IoTThing.privateKey}" >
+          /greengrass/certs/${IoTThing.certificateId}.key
+
           cd /greengrass/config
+
           # Create Greengrass config file from inputs and parameters
-          # Can be enhanced to manage complete installation of Greengrass and credentials
+
+          # Can be enhanced to manage complete installation of Greengrass and
+          credentials
+
           cat <<EOT > config.json          
+
           {
             "coreThing" : {
               "caPath" : "root.ca.pem",
@@ -276,47 +536,82 @@ Resources:
               "caPath" : "file:///greengrass/certs/root.ca.pem"
             }
           }
+
           EOT
+
 
           cd /greengrass/certs/
-          wget -O root.ca.pem https://www.amazontrust.com/repository/AmazonRootCA1.pem
+
+          wget -O root.ca.pem
+          https://www.amazontrust.com/repository/AmazonRootCA1.pem
+
           cd /tmp
-          # Create Greengrass systemd file - thanks to: https://gist.github.com/matthewberryman/fa21ca796c3a2e0dfe8224934b7b055c
+
+          # Create Greengrass systemd file - thanks to:
+          https://gist.github.com/matthewberryman/fa21ca796c3a2e0dfe8224934b7b055c
+
           cat <<EOT > greengrass.service
+
           [Unit]
+
           Description=greengrass daemon
+
           After=network.target
 
+
           [Service]
+
           ExecStart=/greengrass/ggc/core/greengrassd start
+
           Type=simple
+
           RestartSec=2
+
           Restart=always
+
           User=root
+
           PIDFile=/var/run/greengrassd.pid
 
-          [Install]
-          WantedBy=multi-user.target
-          EOT
-          cp greengrass.service /etc/systemd/system
-          systemctl enable greengrass.service
-          mkdir -p /shared/greengrass/buffer
-          sudo chown -R ggc_user:ggc_group /shared/greengrass/buffer/
-          reboot
 
+          [Install]
+
+          WantedBy=multi-user.target
+
+          EOT
+
+          cp greengrass.service /etc/systemd/system
+
+          systemctl enable greengrass.service
+
+          mkdir -p /shared/greengrass/buffer
+
+          sudo chown -R ggc_user:ggc_group /shared/greengrass/buffer/
+
+          sudo wget -cO -
+          https://pdm-workshop-ue1.s3.amazonaws.com/rawdata/iotdata.csv
+          >/shared/greengrass/buffer/iotdata.csv 
+
+          reboot
   IoTThing:
-    # Resource creates thing, certificate key pair, and IoT policy
-    Type: Custom::IoTThing
+    Type: 'Custom::IoTThing'
     Properties:
-      ServiceToken: !GetAtt CreateThingFunction.Arn
-      ThingName: !Join ["_", [!Ref CoreName, "Core"] ]
+      ServiceToken: !GetAtt 
+        - CreateThingFunction
+        - Arn
+      ThingName: !Join 
+        - _
+        - - !Ref CoreName
+          - Core
   CreateThingFunction:
-    Type: AWS::Lambda::Function
+    Type: 'AWS::Lambda::Function'
     Properties:
-      Description: Create thing, certificate, and policy, return cert and private key
+      Description: 'Create thing, certificate, and policy, return cert and private key'
       Handler: index.handler
       Runtime: python3.6
-      Role: !GetAtt LambdaExecutionRole.Arn
+      Role: !GetAtt 
+        - LambdaExecutionRole
+        - Arn
       Timeout: 60
       Code:
         ZipFile: |
@@ -426,44 +721,65 @@ Resources:
               logger.info('Returning response of: {}, with result of: {}'.format(result, responseData))
               sys.stdout.flush()
               cfnresponse.send(event, context, result, responseData)
-
   GroupDeploymentReset:
-    # Allows for deletion of Greengrass group if the deployment status is not
-    # reset manually via the console or API
-    Type: Custom::GroupDeploymentReset
+    Type: 'Custom::GroupDeploymentReset'
     DependsOn: GreengrassGroup
     Properties:
-      ServiceToken: !GetAtt GroupDeploymentResetFunction.Arn
-      Region: !Ref "AWS::Region"
-      ThingName: !Join ["_", [!Ref CoreName, "Core"] ]
+      ServiceToken: !GetAtt 
+        - GroupDeploymentResetFunction
+        - Arn
+      Region: !Ref 'AWS::Region'
+      ThingName: !Join 
+        - _
+        - - !Ref CoreName
+          - Core
   GroupDeploymentResetFunction:
-    Type: AWS::Lambda::Function
+    Type: 'AWS::Lambda::Function'
     Properties:
-      Description: Resets any deployments during stack delete and manages Greengrass service role needs
+      Description: >-
+        Resets any deployments during stack delete and manages Greengrass
+        service role needs
       Handler: index.handler
       Runtime: python3.6
-      Role: !GetAtt LambdaExecutionRole.Arn
+      Role: !GetAtt 
+        - LambdaExecutionRole
+        - Arn
       Timeout: 60
       Environment:
         Variables:
-          STACK_NAME: !Ref "AWS::StackName"
+          STACK_NAME: !Ref 'AWS::StackName'
       Code:
-        ZipFile: |
+        ZipFile: >
           import os
+
           import sys
+
           import json
+
           import logging
+
           import cfnresponse
+
           import boto3
+
           from botocore.exceptions import ClientError
 
+
           lgr = logging.getLogger()
+
           lgr.setLevel(logging.INFO)
 
+
           c = boto3.client("greengrass")
+
           iam = boto3.client("iam")
-          role_name = "greengrass_cfn_{}_ServiceRole".format(os.environ["STACK_NAME"])
-          policy_arn = "arn:aws:iam::aws:policy/service-role/AWSGreengrassResourceAccessRolePolicy"
+
+          role_name =
+          "greengrass_cfn_{}_ServiceRole".format(os.environ["STACK_NAME"])
+
+          policy_arn =
+          "arn:aws:iam::aws:policy/service-role/AWSGreengrassResourceAccessRolePolicy"
+
 
           def find_group(thingName):
               res_auth = ""
@@ -558,20 +874,22 @@ Resources:
               lgr.info("Response of: %s, with result of: %s" % (res, responseData))
               sys.stdout.flush()
               cfnresponse.send(event, context, res, responseData)
-
   InstanceAZ:
-    # Returns an AZ that supports the t3.micro instance type
-    Type: Custom::InstanceAZ
+    Type: 'Custom::InstanceAZ'
     Properties:
-      ServiceToken: !GetAtt InstanceAZFunction.Arn
-      Region: !Ref "AWS::Region"
+      ServiceToken: !GetAtt 
+        - InstanceAZFunction
+        - Arn
+      Region: !Ref 'AWS::Region'
   InstanceAZFunction:
-    Type: AWS::Lambda::Function
+    Type: 'AWS::Lambda::Function'
     Properties:
       Description: Queries account and region for supported AZ
       Handler: index.handler
       Runtime: python3.6
-      Role: !GetAtt LambdaExecutionRole.Arn
+      Role: !GetAtt 
+        - LambdaExecutionRole
+        - Arn
       Timeout: 60
       Code:
         ZipFile: |
@@ -631,103 +949,85 @@ Resources:
               logger.info('Returning response of: %s, with result of: %s' % (result, responseData))
               sys.stdout.flush()
               cfnresponse.send(event, context, result, responseData)
-
-  # Roles
   LambdaExecutionRole:
-    # Role used by CloudFormation created Lambda functions, used by the custom
-    # resource functions to perform their objectives.
-    # Overly permissive for iot:* and greengrass:* to reduce Statement complexity
-    Type: AWS::IAM::Role
+    Type: 'AWS::IAM::Role'
     Properties:
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
-        - Effect: Allow
-          Principal:
-            Service: lambda.amazonaws.com
-          Action: sts:AssumeRole
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
       Policies:
-      - PolicyName: root
-        PolicyDocument:
-          Version: '2012-10-17'
-          Statement:
-          - Effect: Allow
-            Action:
-            - logs:*
-            Resource: arn:aws:logs:*:*:*
-          - Effect: Allow
-            Action:
-            - iot:*
-            Resource: "*"
-          - Effect: Allow
-            Action:
-            - greengrass:*
-            Resource: "*"
-          - Effect: Allow
-            Action:
-            - ec2:DescribeReservedInstancesOfferings
-            Resource: "*"
-          - Effect: Allow
-            Action:
-            - iam:CreateRole
-            - iam:AttachRolePolicy
-            - iam:DetachRolePolicy
-            - iam:GetRole
-            - iam:DeleteRole
-            - iam:PassRole
-            Resource: !Join ["", ["arn:aws:iam::", !Ref "AWS::AccountId", ":role/greengrass_cfn_", !Ref "AWS::StackName", "_ServiceRole"] ]
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:*'
+                Resource: 'arn:aws:logs:*:*:*'
+              - Effect: Allow
+                Action:
+                  - 'iot:*'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'greengrass:*'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'ec2:DescribeReservedInstancesOfferings'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 's3:PutObject'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'iam:CreateRole'
+                  - 'iam:AttachRolePolicy'
+                  - 'iam:DetachRolePolicy'
+                  - 'iam:GetRole'
+                  - 'iam:DeleteRole'
+                  - 'iam:PassRole'
+                Resource: !Join 
+                  - ''
+                  - - 'arn:aws:iam::'
+                    - !Ref 'AWS::AccountId'
+                    - ':role/greengrass_cfn_'
+                    - !Ref 'AWS::StackName'
+                    - _ServiceRole
   GreengrassResourceRole:
-    # Role for deployed Lambda functions to a Greengrass core to call other
-    # AWS services directly
-    Type: AWS::IAM::Role
+    Type: 'AWS::IAM::Role'
     Properties:
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
-        - Effect: Allow
-          Principal:
-            Service: greengrass.amazonaws.com
-          Action: sts:AssumeRole
+          - Effect: Allow
+            Principal:
+              Service: greengrass.amazonaws.com
+            Action: 'sts:AssumeRole'
       Policies:
-      - PolicyName: root
-        PolicyDocument:
-          Version: '2012-10-17'
-          Statement:
-          - Effect: Allow
-            Action:
-            - logs:*
-            Resource: arn:aws:logs:*:*:*
-          - Effect: Allow
-            Action:
-            - iot:*
-            Resource: "*"
-  LambdaFunctionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-        - Effect: Allow
-          Principal:
-            Service:
-              - lambda.amazonaws.com
-          Action:
-            - sts:AssumeRole
-      Path: "/"
-      Policies:
-      - PolicyName: LambdaFunctionPolicy
-        PolicyDocument:
-          Version: '2012-10-17'
-          Statement:
-          - Effect: Allow
-            Action:
-              - logs:CreateLogGroup
-              - logs:CreateLogStream
-              - logs:PutLogEvents
-              - cloudwatch:*
-            Resource: '*'
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:*'
+                Resource: 'arn:aws:logs:*:*:*'
+              - Effect: Allow
+                Action:
+                  - 'iot:*'
+                Resource: '*'
 Outputs:
-  # Emit values needed for deployment status (e.g., where to SSH to)
+  S3Bucket:
+    Value: !Ref E2EDataS3Bucket
+    Description: S3 Bucket for IoT Data storage
   EC2IPAddress:
-    Description: "EC2 Instance Public IP Address"
-    Value: !GetAtt GreengrassInstance.PublicIp
+    Description: EC2 Instance Public IP Address
+    Value: !GetAtt 
+      - GreengrassInstance
+      - PublicIp
