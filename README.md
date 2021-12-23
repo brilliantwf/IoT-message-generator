@@ -10,6 +10,7 @@
 2. GreengrassGroup代码段为配置Greengrass 相关权限和安装配置Greengrass,其中 IoT2S3Lambda部分可以用于IoT到S3数据的装换(使用Kinesis)
 3. IoT2CWLambda 代码段用于 IoT 数据发送到Cloudwatch 创建的命名空间进行展示,可以通过修改环境变量更换展示的数据
 4. GreengrassInstance 代码段用于自动创VPC,子网,安全组,下载Greengrass 软件到Instance 并下载证书安装软件
+
 ## 部署方法
 1. 上传Message_generator.yml 到AWS Cloudformation 平台或点击[创建](https://us-east-1.console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/quickcreate?templateURL=https://pdm-workshop-ue1.s3.amazonaws.com/cfn/e2eworkshop_final.yml&stackName=e2eWorkshop),创建过程中需要指定名称,VPC,地址,Keypair等.
 2. 创建完成后,待EC2 启动完成,拷贝需要的生成消息的CSV文件到 EC2的/shared/greengrass/buffer/ 目录下即可
@@ -30,8 +31,5 @@ sudo chown -R ggc_user:ggc_group /shared/greengrass/buffer
 ```
 sudo wget -cO - https://Someurl//iotdata.csv >/shared/greengrass/buffer/iotdata.csv 
 ```
-## 代码说明
-代码自动完成以下工作
-1. 创建VPC资源,包括子网,安全组
-2. 创建虚拟机并安装Greengrass软件,启用服务
-3. 创建Lambda及相应组件,包括资源组,证书策略等
+## 更详细步骤参考
+https://workshop.mfgee.ml/2.iot/ 的IoT 部分
