@@ -1,9 +1,9 @@
 # IoT-message-generator
 ## 说明
-该代码主要用于IoT 消息的生成转换和展示,支持使用Cloudformation 一键部署.
+以上代码主要用于Greengrass 设备的模拟,IoT 消息的生成转换和展示,支持使用Cloudformation 一键部署.
 ## 背景
 1. AWS IoT Greengrass 的安装过程复杂,通常需要30分钟以上时间配置,此脚本可以在数分钟内自动在EC2上生成证书并部署Greengrass 软件.
-2. 现有IoT 设备模拟程序通常需要手动修改程序代码或Json文件用于生成IoT数据,为了更加方便数据生成,此代码直接读取现有CSV文件(可以存放于S3上),从CSV文件第一行取得Key,顺序从第二行开始取得value,并发送消息,这样可以灵活定制IoT 数据.
+2. 现有IoT 设备模拟程序通常需要手动修改程序代码或Json文件用于生成IoT数据,这些数据通常是模拟的随机数据,为了更加方便生成业务需要使用的数据(严格顺序发送),此代码直接读取现有CSV文件(可以存放于S3上),从CSV文件第一行取得Key,顺序从第二行开始取得value,并发送消息,这样可以灵活定制IoT 数据.
 3. IoT 数据的展现通常使用Sitewise/QuickSight或第三方形式,此脚本通过一个lambda将IoT 数据打入到Cloudwatch中展示,无需配置,只需要修改Lambda环境变量即可修改需要展示的数据.
 ## 代码说明
 1. CopyFilesToS3 代码段的Lambda 可以用于Cloudformation 运行后复制数据(Cloudformation 默认是不允许在执行过程中复制数据)
